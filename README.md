@@ -2,6 +2,8 @@
 
 Code and instruction for configuring drone.
 
+[TOC]
+
 ## H/W Drone Parts
 
 
@@ -48,6 +50,8 @@ Code and instruction for configuring drone.
    1. ```pip install cython```
    2. ```pip install pymavros```
    3. ```pip install pyrealsense```
+
+## Guide
 
 ## Reference
 
