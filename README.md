@@ -39,7 +39,8 @@ Code and instruction for configuring drone.
    4. [install jtop](https://github.com/rbonghi/jetson_stats)
    5. [vim setting](https://hyoje420.tistory.com/51)
 3. [opencv 3.2](https://github.com/jetsonhacks/buildOpenCVXavier)
-4. librealsense
+4. [librealsense v2.25.0](https://github.com/JetsonHacksNano/installLibrealsense/tree/vL4T32.2.1)
+   1. [librealsense v2.25.0 source](https://github.com/IntelRealSense/librealsense/releases/tag/v2.25.0)
 5. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
    1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
    2. [Vision_to_mavros](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
