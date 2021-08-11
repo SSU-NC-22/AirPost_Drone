@@ -41,14 +41,17 @@ Code and instruction for configuring drone.
 3. [opencv 3.2](https://github.com/jetsonhacks/buildOpenCVXavier)
 4. [librealsense v2.25.0](https://github.com/JetsonHacksNano/installLibrealsense/tree/vL4T32.2.1)
    1. [librealsense v2.25.0 source](https://github.com/IntelRealSense/librealsense/releases/tag/v2.25.0)
-5. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
-   1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
-   2. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
-   3. [apriltag](), [apriltag-ros]()
-   4. [realsense_ros_v2.2.8](https://github.com/jetsonhacks/installRealSenseSDK)
-	1. [source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
-   5. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
-6. Python packages
+5. [apriltag](https://github.com/AprilRobotics/apriltag)
+6. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
+   1. with catkin_build in catkin_ws_build directory
+      1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
+      2. [apriltag-ros](https://github.com/AprilRobotics/apriltag_ros)
+      3. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
+   2. with catkin_make in catkin_ws directory
+      1. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
+      2. [realsense_ros_v2.2.8](https://github.com/jetsonhacks/installRealSenseROS)
+         1. [source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
+7. Python packages
    1. ```pip install cython```
    2. ```pip install pymavros```
    3. ```pip install pyrealsense```
