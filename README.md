@@ -43,10 +43,11 @@ Code and instruction for configuring drone.
    1. [librealsense v2.25.0 source](https://github.com/IntelRealSense/librealsense/releases/tag/v2.25.0)
 5. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
    1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
-   2. [Vision_to_mavros](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
-   3. apriltag, apriltag-ros
-   4. [Realsense_ros](https://github.com/jetsonhacks/installRealSenseSDK)
-   5. [rosbags](https://github.com/ros/ros_comm)
+   2. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
+   3. [apriltag](), [apriltag-ros]()
+   4. [realsense_ros_v2.2.8](https://github.com/jetsonhacks/installRealSenseSDK)
+	1. [source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
+   5. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
 6. Python packages
    1. ```pip install cython```
    2. ```pip install pymavros```
