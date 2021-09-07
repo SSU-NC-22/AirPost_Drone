@@ -1,0 +1,15 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/nano/catkin_ws/devel/lib/python2.7/dist-packages",
+        "/opt/ros/melodic/lib/python2.7/dist-packages",
+        "/usr/local/lib",
+        "/usr/local/lib"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/nano/catkin_ws/devel/lib/python2.7/dist-packages",
+        "/opt/ros/melodic/lib/python2.7/dist-packages",
+        "/usr/local/lib",
+        "/usr/local/lib"
+    ],
+    "ros.distro": "melodic"
+}
