@@ -39,16 +39,19 @@ Code and instruction for configuring drone.
    4. [install jtop](https://github.com/rbonghi/jetson_stats)
    5. [vim setting](https://hyoje420.tistory.com/51)
 3. [opencv 3.2](https://github.com/jetsonhacks/buildOpenCVXavier)
-4. [librealsense v2.25.0](https://github.com/JetsonHacksNano/installLibrealsense/tree/vL4T32.2.1)
+4. [JetsonHacksNano librealsense  v2.25.0](https://github.com/JetsonHacksNano/installLibrealsense/tree/vL4T32.2.1)
    1. [librealsense v2.25.0 source](https://github.com/IntelRealSense/librealsense/releases/tag/v2.25.0)
-5. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
-   1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
-   2. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
-   3. [apriltag](), [apriltag-ros]()
-   4. [realsense_ros_v2.2.8](https://github.com/jetsonhacks/installRealSenseSDK)
-	1. [source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
-   5. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
-6. Python packages
+5. [apriltag](https://github.com/AprilRobotics/apriltag)
+6. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
+   1. with catkin_build in catkin_ws_build directory
+      1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
+      2. [apriltag-ros](https://github.com/AprilRobotics/apriltag_ros)
+      3. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
+   2. with catkin_make in catkin_ws directory
+      1. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
+      2. [JetsonHacksNano realsense_ros_v2.2.8](https://github.com/JetsonHacksNano/installRealSenseROS/releases/tag/vL4T32.2.1)
+         1. [realsense_ros_v2.2.8 source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
+7. Python packages
    1. ```pip install cython```
    2. ```pip install pymavros```
    3. ```pip install pyrealsense```
@@ -62,4 +65,9 @@ Code and instruction for configuring drone.
 3. [ROS and VIO tracking camera for non-GPS Navigation](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
 4. [Drone Assembly Guide video 1. Falcon shop](https://www.youtube.com/watch?v=IdpUYPuSYhE&ab_channel=KoreaFalcon)
 5. [pixhawk 4 official guide](https://docs.px4.io/master/ko/getting_started/px4_basic_concepts.html)
+6. [pm07 setting](http://www.holybro.com/product/pixhawk-4-power-module-pm07/) 
+7. [Holybro X500 + Pixhawk4 assembly](https://docs.px4.io/master/ko/frames_multicopter/holybro_x500_pixhawk4.html)
+8. [pixhawk 4 airframe](https://docs.px4.io/master/ko/airframes/airframe_reference.html)
+9. [pixhawk 4 wiring](https://docs.px4.io/master/ko/assembly/quick_start_pixhawk4.html#power)
+10. [xcopter esc](https://www.youtube.com/watch?v=nJnbSJwq4Uw&t=199s&ab_channel=Dronejang)
 
