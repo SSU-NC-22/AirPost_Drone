@@ -1,0 +1,18 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "",
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "includePath": [
+        "/home/nano/catkin_ws_build/devel/include/**",
+        "/opt/ros/melodic/include/**",
+        "/home/nano/catkin_ws_build/src/apriltag_ros/apriltag_ros/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS"
+    }
+  ],
+  "version": 4
+}
