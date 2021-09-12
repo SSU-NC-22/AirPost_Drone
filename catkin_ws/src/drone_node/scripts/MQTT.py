@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
+
+from AirPost_Drone.catkin_ws.src.drone_node.scripts.DroneController import DroneController
+from paho import mqtt
 from paho.mqtt import client as mqtt_client
 from datetime import datetime
 import time
 import json
-import rospy
-from std_msgs.msg import String
-from sensor_msgs.msg import NavSatFix
-from sensor_msgs.msg import BatteryState
-from geometry_msgs.msg import TwistStamped
-from mavros_msgs.msg import *
-from mavros_msgs.srv import *
+ import rospy
+ from std_msgs.msg import String
+ from sensor_msgs.msg import NavSatFix
+ from sensor_msgs.msg import BatteryState
+ from geometry_msgs.msg import TwistStamped
+ from mavros_msgs.msg import *
+ from mavros_msgs.srv import *
+from DroneController import DroneController
+from DCmotor import DCMotor
 
 broker = '58.230.119.87'
 port = 9708
@@ -47,24 +52,41 @@ class MQTT():
 
 	def subscribe(self, topic):
 		self.sub_topic = topic
-		
-		def on_message(client, userdata, msg): #return msg.payload
-			print(f"Received msg from `{msg.topic}` topic")
-
-		self.client.on_message = on_message
+		self.client.on_message = mqtt_callback_function
 		self.client.subscribe(self.sub_topic)
 
-class DroneNode():
+
+def mqtt_callback_function(client, userdata, msg, ):
+	# 1. get waypoint, send to pixhawk
+	msg = msg.payload
+	msg = json.loads(msg)
+	dronecontroller.create_waypoint(msg['values']['wp0'])
+	# 2. , 3. arm the vehicle and take off 
+	dronecontroller.takeoff(1)
+	# 4. , 5. set mode to auto. fly to tag
+	# 6. 7. hold still above tag drop the object
+	while mqtt_ros_bridge.reachedWaypoint != len(msg['values']['wp0']):
+		pass
+	# 8. , 9. set new waypoint
+	dronecontroller.create_waypoint(msg['values']['wp1'])
+	# 10. when reached. land.
+	dronecontroller.land()
+
+
+
+class MQTT_ROS_bridge():
 	def __init__(self) -> None:
 		rospy.Subscriber("/mavros/global_position/global", NavSatFix, self.globalValCallback)
 		rospy.Subscriber("/mavros/global_position/gp_vel", TwistStamped, self.velocityCallback)
 		rospy.Subscriber("/mavros/battery", BatteryState, self.batteryCallback)
+		rospy.Subscriber("/mission/reached", WaypointReached, waypointCallback)
 
 		self.lat = None
 		self.lon = None
 		self.alt = None
 		self.battery = None
 		self.velcity = None
+		self.reachedWaypoint = None
 	
 	def globalValCallback(self, data):
 		self.lat = data.latitude
@@ -72,35 +94,38 @@ class DroneNode():
 		self.alt = data.altitude
 	
 	def velocityCallback(self, data):
-		self.velcity = data.twist.linear.x
+		self.velcity = (data.twist.linear.x ** 2 + data.twist.linear.y ** 2 + data.twist.linear.z ** 2 ) ** 1/2
 		
 	def batteryCallback(self, data):
 		self.battery = data.percentage
 
-#mqtt.subscribe("command/downlink/ActuatorReq/0", handler)
+	def waypointCallback(self. data):
+		self.reachedWaypoint = data.wp_seq
 
-if __name__=='__main__':
-	rospy.init_node('DroneNode', anonymous = True)
+if __name__=='__main__':	
+	# ros, ros subscribe setting
+	rospy.init_node('mqtt', anonymous = True)
 	rate = rospy.Rate(1) #10hz
-	droneNode = DroneNode()
+	mqtt_ros_bridge = MQTT_ROS_bridge()
 	
+	# mqtt, mqtt sub, pub setting
 	mqtt = MQTT(broker, port, client_id)
 	mqtt.connect_mqtt()
-	mqtt.subscribe("data/"+client_id)
-	
-	while not rospy.is_shutdown():
-		#pub = rospy.Publisher('chatter',String,queue_size=10)
-		#droneNode.pub.publish()
-		rospy.spin()
+	mqtt.subscribe("command/downlink/ActuatorReq/"+client_id)
 
+	#drone_controller init
+	dronecontroller = DroneController()
+
+	while not rospy.is_shutdown():
+		# sensor value sending code
 		msgs = {
 			"node_id": client_id,
 			"values": [
-				droneNode.lat,
-				droneNode.lon,
-				droneNode.alt,
-				droneNode.battery,
-				droneNode.velcity
+				mqtt_ros_bridge.lat,
+				mqtt_ros_bridge.lon,
+				mqtt_ros_bridge.alt,
+				mqtt_ros_bridge.velcity,
+				mqtt_ros_bridge.battery
 			],
 			"timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 		}
@@ -110,6 +135,3 @@ if __name__=='__main__':
 		print("publish: ", type(msg), msg, "\n")
 		
 		rate.sleep()
-
-	
-	#mqtt.subscribe("command/downlink/ActuatorReq/0", handler)
