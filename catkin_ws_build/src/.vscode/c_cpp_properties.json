@@ -6,8 +6,11 @@
         "limitSymbolsToIncludedHeaders": true
       },
       "includePath": [
+        "/home/nano/catkin_ws_build/devel/include/**",
         "/home/nano/catkin_ws/devel/include/**",
         "/opt/ros/melodic/include/**",
+        "/home/nano/catkin_ws_build/src/apriltag_ros/apriltag_ros/apriltag_ros/include/**",
+        "/home/nano/catkin_ws/src/drone_controller/include/**",
         "/home/nano/catkin_ws/src/ros_comm/utilities/message_filters/include/**",
         "/home/nano/catkin_ws/src/realsense-ros/realsense2_camera/include/**",
         "/home/nano/catkin_ws/src/ros_comm/tools/rosbag/include/**",
