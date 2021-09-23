@@ -6,8 +6,8 @@ import time
 
 class DCMotor():
     def __init__(self):
-        self.MOTOR_B_A1 = int(17)
-        self.MOTOR_B_B1 = int(18)
+        self.MOTOR_B_A1 = int(5)
+        self.MOTOR_B_B1 = int(6)
 
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.MOTOR_B_A1, GPIO.OUT)
@@ -31,11 +31,11 @@ class DCMotor():
 if __name__ == '__main__':
     motor = DCMotor()
     motor.counterclockwise()
-    time.sleep(0.2)
+    time.sleep(7.5)
     motor.stop()
-    time.sleep(0.2)
-    motor.clockwise()
     time.sleep(1)
+    motor.clockwise()
+    time.sleep(14)
     motor.stop()
     time.sleep(0.2)
     GPIO.cleanup()
