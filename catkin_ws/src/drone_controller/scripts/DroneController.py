@@ -46,7 +46,7 @@ class DroneController():
 # Arm the throttle, takeoff to a few feet, and set to guided mode
 	def takeoff(self, height=1.0):
 		# Set to loiter mode for arming
-		mode_resp = self.mode_service(custom_mode="5")
+		mode_resp = self.mode_service(custom_mode="4")
 		self.arm()
 
 		# Takeoff
