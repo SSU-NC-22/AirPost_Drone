@@ -44,11 +44,8 @@ class DroneController():
 
 # Arm the throttle, takeoff to a few feet, and set to guided mode
 	def takeoff(self, height=1.0):
-		# Set to loiter mode for arming
 		mode_resp = self.mode_service(custom_mode="4")
 		self.arm()
-
-		# Takeoff
 		takeoff_resp = self.takeoff_service.call(altitude=height)
 
 		# return takeoff_resp
@@ -127,11 +124,10 @@ class DroneController():
 		self.create_waypoint(wpl, tagidx)
 		# 2. , 3. arm the vehicle and take off
 		self.takeoff(1)
-		rospy.sleep(3)
+		time.sleep(3)
 		# 4., 5.,8., 9.,10. set mode to auto. will fly to the tag, drop the package, and do remain missions
 		self.setmode(3)
 		# continued to waypointCallback
-		# dronecontroller.disarm()
 
 	def waypointCallback(self, data):
 		self.currentWaypoint = data.wp_seq
