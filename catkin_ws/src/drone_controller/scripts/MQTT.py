@@ -5,14 +5,13 @@ from paho.mqtt import client as mqtt_client
 from datetime import datetime
 import json
 import rospy
-from std_msgs.msg import String
+from std_msgs.msg import Float64
 from sensor_msgs.msg import NavSatFix
 from sensor_msgs.msg import BatteryState
 from geometry_msgs.msg import TwistStamped
 from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 from DroneController import DroneController
-from DCmotor import DCMotor
 import time
 
 broker = '58.230.119.87'
@@ -55,21 +54,18 @@ class MQTT():
         self.client.subscribe(self.sub_topic)
 
     def mqtt_on_message(self, client, userdata, msg):  # save waypoint to pixhawk
-        print("got it\n\n")
+        print("Got Actutator message from server")
         # 1. get waypoint, send to pixhawk
-        global tagidx
-        global endidx
-        msg = json.loads(msg.payload.decode())
-        endidx = len(msg['values']) - 1
+        msg = msg.payload.decode()
+        msg = json.loads(msg)
+
+        endidx = len(msg['values'])
         tagidx = msg['tagidx']
-        dronecontroller.create_waypoint(msg['values'], tagidx)
-        # 2. , 3. arm the vehicle and take off
-        dronecontroller.takeoff(1)
-        rospy.sleep(3)
-        # 4., 5.,8., 9.,10. set mode to auto. will fly to the tag, drop the package, and do remain missions
-        dronecontroller.setmode(3)
-        # continued to SensorSub.waypointCallback
-        # dronecontroller.disarm()
+        wpl = msg['values']
+
+        # dronecontroller will take over the mssion
+        dronecontroller.mqtt_call_back(wpl, tagidx, endidx)
+        
 
 
 class SensorSub():
@@ -77,7 +73,7 @@ class SensorSub():
         rospy.Subscriber("/mavros/global_position/global", NavSatFix, self.globalValCallback)
         rospy.Subscriber("/mavros/global_position/raw/gps_vel", TwistStamped, self.velocityCallback)
         rospy.Subscriber("/mavros/battery", BatteryState, self.batteryCallback)
-        rospy.Subscriber("/mavros/mission/reached", WaypointReached, self.waypointCallback)
+        rospy.Subscriber("/mavros/global_position/rel_alt", Float64, self.rel_altCallback )
 
         self.lat = None
         self.long = None
@@ -85,14 +81,11 @@ class SensorSub():
         self.batteryPer = None
         self.batteryVol = None
         self.velcity = None
-        self.reachedWaypoint = None
-        self.status = None
-        self.dcmotor = DCMotor()
 
     def globalValCallback(self, data):
         self.lat = data.latitude
         self.long = data.longitude
-        self.alt = data.altitude
+        #self.alt = data.altitude
 
     def velocityCallback(self, data):
         self.velcity = (data.twist.linear.x ** 2 + data.twist.linear.y ** 2 + data.twist.linear.z ** 2) ** 1/2
@@ -101,26 +94,12 @@ class SensorSub():
         self.batteryPer = data.percentage * 100
         self.batteryVol = data.voltage
 
-    def waypointCallback(self, data):
-        self.reachedWaypoint = data.wp_seq
-        
-        if self.reachedWaypoint == endidx:
-            self.status = "done"
-        else:
-            self.status = "on going"
-            
-        # 6. 7. hold still above tag drop the object
-        if self.reachedWaypoint == tagidx+1:
-            self.dcmotor.counterclockwise()
-            time.sleep(0.2)
-            self.dcmotor.stop()
-            time.sleep(0.2)
-            self.dcmotor.clockwise()
-            time.sleep(1)
-            self.dcmotor.stop()
-            time.sleep(0.2)
+    def rel_altCallback(self, data):
+        self.alt = data.data
 
 if __name__ == "__main__":
+    # for flight data logging
+    f = open("./log/blackbox"+ datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'w')
     # ros, ros subscribe setting
     rospy.init_node('mqtt', anonymous=True)
     rate = rospy.Rate(1)  # 10hz
@@ -145,12 +124,13 @@ if __name__ == "__main__":
                 sensorSub.velcity,
                 sensorSub.batteryPer
             ],
-            "status": sensorSub.status,
+            "status": dronecontroller.status,
             "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
         msg = json.dumps(msgs)
         mqtt.publish("data/"+client_id, msg)
+        f.write(msg + "\n")
         print("publish: ", type(msg), msg, "\n")
 
         rate.sleep()
