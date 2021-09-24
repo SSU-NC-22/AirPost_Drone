@@ -98,8 +98,6 @@ class SensorSub():
         self.alt = data.data
 
 if __name__ == "__main__":
-    # for flight data logging
-    f = open("./log/blackbox"+ datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'w')
     # ros, ros subscribe setting
     rospy.init_node('mqtt', anonymous=True)
     rate = rospy.Rate(1)  # 10hz
@@ -130,7 +128,6 @@ if __name__ == "__main__":
 
         msg = json.dumps(msgs)
         mqtt.publish("data/"+client_id, msg)
-        f.write(msg + "\n")
         print("publish: ", type(msg), msg, "\n")
 
         rate.sleep()
