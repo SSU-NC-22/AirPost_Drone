@@ -55,7 +55,12 @@ Code and instruction for configuring drone.
    1. ```pip install cython```
    2. ```pip install pymavros```
    3. ```pip install pyrealsense```
-
+8. Auto reverse ssh tunnel on boot
+   ```
+   * * * * *  /scripts/reverse_ssh_continuous.sh
+   * * * * * sleep 20; /scripts/reverse_ssh_continuous.sh
+   * * * * * sleep 40; /scripts/reverse_ssh_continuous.sh
+   ```
 ## Guide
 
 ## Reference
