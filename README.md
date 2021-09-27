@@ -1,5 +1,4 @@
 # AirPost_Drone
-
 Code and instruction for configuring drone.
 
 ## H/W Drone Parts
@@ -89,4 +88,3 @@ Code and instruction for configuring drone.
 9. [pixhawk 4 wiring](https://docs.px4.io/master/ko/assembly/quick_start_pixhawk4.html#power)
 10. [xcopter esc](https://www.youtube.com/watch?v=nJnbSJwq4Uw&t=199s&ab_channel=Dronejang)
 11. [reverse ssh configuration](https://system-monitoring.readthedocs.io/en/latest/ssh.html)
-
