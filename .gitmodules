@@ -1,0 +1,16 @@
+[submodule "drone_controller"]
+	path = catkin_ws/src/drone_controller
+	url = https://github.com/SSU-NC-22/drone_controller.git
+[submodule "realsense-ros"]
+	path = catkin_ws/src/realsense-ros
+	url = https://github.com/SSU-NC-22/realsense-ros.git
+[submodule "ros_comm"]
+	path = catkin_ws/src/ros_comm
+	url = https://github.com/SSU-NC-22/ros_comm.git
+[submodule "vision_to_mavros"]
+	path = catkin_ws/src/vision_to_mavros
+	url = https://github.com/SSU-NC-22/vision_to_mavros.git
+[submodule "apriltag_ros"]
+    path = catkin_ws_build/src/apriltag_ros
+    url = https://github.com/SSU-NC-22/apriltag_ros.git
+	
