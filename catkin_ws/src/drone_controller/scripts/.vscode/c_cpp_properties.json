@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "",
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "includePath": [
+        "/home/nano/catkin_ws/devel/include/**",
+        "/opt/ros/melodic/include/**",
+        "/home/nano/catkin_ws_build/devel/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/utilities/message_filters/include/**",
+        "/home/nano/catkin_ws/src/realsense-ros/realsense2_camera/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/tools/rosbag/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/tools/rosbag_storage/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/clients/roscpp/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/utilities/roslz4/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/tools/rostest/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/tools/topic_tools/include/**",
+        "/home/nano/catkin_ws/src/ros_comm/utilities/xmlrpcpp/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS"
+    }
+  ],
+  "version": 4
+}
