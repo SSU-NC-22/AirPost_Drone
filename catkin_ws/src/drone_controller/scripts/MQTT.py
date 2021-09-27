@@ -50,6 +50,7 @@ class MQTT():
 
     def ActuatorReqCallBack(self, client, userdata, msg):  # save waypoint to pixhawk
         print("Got Actutator message from server")
+        time.sleep(3)
         # 1. get waypoint, send to pixhawk
         msg = msg.payload.decode()
         msg = json.loads(msg)
