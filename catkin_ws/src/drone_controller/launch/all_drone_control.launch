@@ -3,6 +3,6 @@
     <include file="$(find vision_to_mavros)/launch/t265_precland.launch"/>
 
     <!-- This node will run the drone_controller MQTT.py  -->
-    <node pkg="drone_controller" name="MQTT.py" type="mqtt" output="screen">
+    <node pkg="drone_controller" name="mqtt" type="MQTT.py" output="screen">
     </node>
 </launch>

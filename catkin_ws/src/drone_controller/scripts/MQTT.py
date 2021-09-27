@@ -16,7 +16,7 @@ import time
 
 broker = '58.230.119.87'
 port = 9708
-client_id = 'DRO0'
+client_id = 'DRO3'
 
 
 class MQTT():
@@ -63,10 +63,12 @@ class MQTT():
     
 
     def DevStatusReqCallBack(self, client, userdata, msg):
-        msgs = { "battery": sensorSub.batteryPer }
+        msgs = {"lat": sensorSub.lat,
+                "long": sensorSub.long,
+                "alt" : sensorSub.alt,
+                "battery": sensorSub.batteryVol }
         msg = json.dumps(msgs)
-        mqtt.publish("command/uplink/"+client_id, msg)
-        
+        mqtt.publish("command/uplink/DevStatusAns/"+client_id, msg)        
 
 
 class SensorSub():
@@ -109,9 +111,9 @@ if __name__ == "__main__":
 
     # mqtt, mqtt sub, pub setting
     mqtt = MQTT(broker, port, client_id)
-    mqtt.connect_mqtt()
     mqtt.client.message_callback_add("command/downlink/ActuatorReq/"+client_id, mqtt.ActuatorReqCallBack)
     mqtt.client.message_callback_add("command/downlink/DevStatusReq/"+client_id, mqtt.DevStatusReqCallBack)
+    mqtt.connect_mqtt()
     mqtt.client.subscribe("command/downlink/ActuatorReq/"+client_id)
     mqtt.client.subscribe("command/downlink/DevStatusReq/"+client_id)
 
@@ -124,9 +126,9 @@ if __name__ == "__main__":
                 sensorSub.long,
                 sensorSub.alt,
                 sensorSub.velcity,
-                sensorSub.batteryPer
+                sensorSub.batteryPer,
+                dronecontroller.status
             ],
-            "status": dronecontroller.status,
             "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 

@@ -132,10 +132,10 @@ class DroneController():
 	def waypointCallback(self, data):
 		self.currentWaypoint = data.wp_seq
 
-		if self.currentWaypoint == self.endidx:
-			self.status = "done"
+		if self.currentWaypoint >= self.tagidx + 1:
+			self.status = 1
 		else:
-			self.status = "on going"
+			self.status = 0
 			
 		# 6. 7. hold still above tag drop the object
 		if self.currentWaypoint  == self.tagidx:
