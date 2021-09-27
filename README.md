@@ -2,27 +2,35 @@
 
 Code and instruction for configuring drone.
 
-[TOC]
-
 ## H/W Drone Parts
 
+1. [Nvidia] Jetson Nano Dev. kit
+2. [Waveshare] SIM7600G-H LTE Module for Jetson Nano
+3. Motor Driver HG7881
+4. Step down circuit XL4015
+5. Li-po battery 5800mah
+6. [HOLYBRO] Pixhawk 4 Power Module (PM07)
+7. [Intel] RealSense TrackingCamera T265
+8. [HOLYBRO] Pixhawk4 500mW Telemetry 433Mhz
+9. [TMOTOR] AIR2213 KV920 BLDC Motor, T9545 Prop
+10. [TMOTOR] AIR20A ESC
+11. [Motorbank] GM24-KTX Dc motor
+12. [HOLYBRO] Pixhawk 4
+13. [HOLYBRO] Pixhawk 4 GPS Module
+14. [RadioLink] T8FB BT Transmitter, Receiver set
+15. dji f450 drone frame
 
-
-## H/W Companion Computer Settings
-
-1. Jetson nano
-2. Simcom 7600G lte module
-3. Intel realsense t265 camera
-
-## S/W Settings
+### S/W on Jetson nano
 
 1. Jetpack 4.2
 2. opencv 3.2
-3. librealsense
+3. librealsense v2.25.0
 4. ROS melodic
    1. mavros
    2. apriltag-ros
-   3. Realsense_ros
+   3. Realsense_ros v2.2.8
+   4. vision_to_mavros
+   5. rosbags
 5. apriltag
 
 ## Installation Guide
@@ -55,14 +63,19 @@ Code and instruction for configuring drone.
    1. ```pip install cython```
    2. ```pip install pymavros```
    3. ```pip install pyrealsense```
-8. Auto reverse ssh tunnel on boot
-   ```
-   * * * * *  /scripts/reverse_ssh_continuous.sh
-   * * * * * sleep 20; /scripts/reverse_ssh_continuous.sh
-   * * * * * sleep 40; /scripts/reverse_ssh_continuous.sh
-   ```
-## Guide
-
+8. Set Auto reverse ssh tunnel on boot
+   1. copy scripts/reverse_ssh_continuous.sh to /scripts/ folder
+      - ```mkdir /scripts && sudo cp scripts/reverse_ssh_continuous.sh /scripts```
+   2. run crontab edit with ```crontab -e``` and add following commands below
+      ```
+      * * * * *  /scripts/reverse_ssh_continuous.sh
+      * * * * * sleep 20; /scripts/reverse_ssh_continuous.sh
+      * * * * * sleep 40; /scripts/reverse_ssh_continuous.sh
+      ```
+   
+## Trouble shootGuide
+1. Jetson nano is not reading values properly from pixhawk through ROS.
+   - Try ```rosservice call /mavros/set stream rate 0 10 1```
 ## Reference
 
 1. [lte module wiki](https://www.waveshare.com/wiki/SIM7600G-H_4G_for_Jetson_Nano)
