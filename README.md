@@ -19,7 +19,7 @@ Code and instruction for configuring drone.
 14. [RadioLink] T8FB BT Transmitter, Receiver set
 15. dji f450 drone frame
 
-### S/W on Jetson nano
+## S/W on Jetson nano
 
 1. Jetpack 4.2
 2. opencv 3.2
@@ -71,10 +71,24 @@ Code and instruction for configuring drone.
       * * * * * sleep 20; /scripts/reverse_ssh_continuous.sh
       * * * * * sleep 40; /scripts/reverse_ssh_continuous.sh
       ```
-   
+## Running the code
+1. git clone this repository
+2. move catkin_ws, catkin_ws_build folder to your home directory. 
+3. build ROS packages
+   1. ```catkin_make``` with catkin_ws folder
+   2. ```catkin build``` with catkin_ws_build folder
+4. run the whole code with command
+   - ```roslaunch drone_controller all_drone_control.launch```
+
 ## Trouble shootGuide
 1. Jetson nano is not reading values properly from pixhawk through ROS.
    - Try ```rosservice call /mavros/set stream rate 0 10 1```
+2. Cannot launch file at catkin_ws_build after compiling catkin_make at catkin_ws folder
+   - [this reference](https://answers.ros.org/question/214923/roslaunch-cant-find-launch-files-with-catkin-build/) would be helpful
+3. Realsense Camera tf error
+   - It's problem with camera. you should power off and power on the camera
+   - [reference link](https://discuss.ardupilot.org/t/precision-landing-with-ros-realsense-t265-camera-and-apriltag-3-part-2-2/51493/5)
+
 ## Reference
 
 1. [lte module wiki](https://www.waveshare.com/wiki/SIM7600G-H_4G_for_Jetson_Nano)
@@ -88,3 +102,12 @@ Code and instruction for configuring drone.
 9. [pixhawk 4 wiring](https://docs.px4.io/master/ko/assembly/quick_start_pixhawk4.html#power)
 10. [xcopter esc](https://www.youtube.com/watch?v=nJnbSJwq4Uw&t=199s&ab_channel=Dronejang)
 11. [reverse ssh configuration](https://system-monitoring.readthedocs.io/en/latest/ssh.html)
+12. Rospy subscribe multiple topics [first_link](https://robotics.stackexchange.com/questions/6652/how-to-get-a-python-node-in-ros-subscribe-to-multiple-topics) [second_link](https://answers.ros.org/question/225008/python-class-for-subscribing-data-for-several-topics/)
+13. [set waypoint to pixhawk](https://github.com/mavlink/mavros/issues/837)
+14. [mavros wiki](http://wiki.ros.org/mavros#gcs_bridge)
+15. [rospy tutorial](https://github.com/greattoe/ros_tutorial_kr/blob/master/ros1_tutorial/rospy/rospy_1_How2UsePythonWithCatkin_1.md)
+16. [rospkg module not found](https://answers.ros.org/question/245967/importerror-no-module-named-rospkg-python3-solved/)
+17. [Ardupilot Mission commands overview](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-nav-takeoff)
+18. [Ardupilot Set Flight mode](https://ardupilot.org/dev/docs/apmcopter-adding-a-new-flight-mode.html)
+19. [pixhawk gps led warning](https://ardupilot.org/copter/docs/common-leds-pixhawk.html)
+20. [SITL Guide](https://ardupilot.org/dev/docs/using-sitl-for-ardupilot-testing.html)
