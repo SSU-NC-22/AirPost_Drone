@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 
 from paho import mqtt
@@ -14,8 +15,9 @@ from mavros_msgs.srv import *
 from DroneController import DroneController
 import time
 
-broker = 'REDACTED_HOST'
-port = 9708
+# broker host/port from env (was a hardcoded operator IP — security finding)
+broker = os.environ.get('MQTT_BROKER_HOST', '127.0.0.1')
+port = int(os.environ.get('MQTT_BROKER_PORT', '1883'))
 client_id = 'DRO3'
 
 
