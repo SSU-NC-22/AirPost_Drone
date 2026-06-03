@@ -1,5 +1,51 @@
-# AirPost_Drone
-Code and instruction for configuring drone.
+# AirPost_Drone — the flying courier (hardware + on-drone software)
+
+This repository is the **drone itself** in the [AirPost](https://github.com/jsoone24/NC_AirPost)
+autonomous parcel-delivery system: the physical aircraft, plus the software that runs **on board** to
+fly missions, deliver the parcel, and camera-land precisely on a station.
+
+## What it is, in plain terms
+
+A delivery drone is really two computers bolted together:
+
+1. **A flight controller (Pixhawk 4)** — the real-time autopilot that keeps the aircraft stable and
+   executes low-level flight (arm, take off, go to a point, land). It speaks **MAVLink**.
+2. **A companion computer (NVIDIA Jetson Nano)** — a small Linux box that does the "thinking" the
+   autopilot can't: runs the camera + AprilTag vision for **precision landing**, talks to the rest of
+   AirPost over LTE/MQTT, and sends high-level commands down to the Pixhawk over MAVROS.
+
+The Jetson also carries a **RealSense T265 tracking camera** (visual odometry, so the drone can hold
+position even where GPS is weak) and a **winch motor** to lower the parcel without landing.
+
+## Where it sits in AirPost
+
+```
+AirPost backend ──MQTT(flight order)──► AirPost_Drone (Jetson)
+                                          │  MAVROS / MAVLink
+                                          ▼
+                                        Pixhawk 4 autopilot ──► motors, GPS, sensors
+                                          ▲
+                  AprilTag vision ────────┘  (camera → "land on the marker")
+AirPost_Drone ──MQTT(GPS, status, telemetry)──► Sink → Kafka → backend (live tracking + storage)
+```
+
+- **Receives** a flight order over MQTT from the backend (which station to start at, where to drop,
+  where to land).
+- **Flies it** by commanding the Pixhawk (take off → cruise → winch the parcel down → fly to the
+  landing station → AprilTag precision-land).
+- **Reports** its GPS, status and sensor readings back so the operator sees it live on the map and the
+  data is archived.
+
+> **Want to see this flight without building hardware?** The
+> [`simulation/`](https://github.com/jsoone24/NC_AirPost/tree/main/simulation) in the umbrella repo
+> runs the *exact same mission* (takeoff → winch → AprilTag precision-land) in Gazebo physics, driven
+> by the same backend + MQTT. Build the hardware below when you want it to leave the screen.
+
+The rest of this README is the **hardware bill of materials and the step-by-step bring-up** for the
+real aircraft (Jetson image, ROS, MAVROS, RealSense, AprilTag, the auto-reverse-SSH tunnel, etc.).
+
+---
+
 
 ## H/W Drone Parts
 
