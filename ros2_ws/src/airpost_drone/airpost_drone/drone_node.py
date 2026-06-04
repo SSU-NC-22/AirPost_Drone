@@ -140,7 +140,7 @@ class DroneNode(Node):
     def _fly(self, order):
         cruise   = float(order.get("cruise", 15.0))
         winch_h  = float(order.get("winch_height", 10.0))      # metres above the pad while lowering
-        pre_alt  = float(order.get("precland_alt", 6.0))       # height to align over the tag before precland
+        pre_alt  = float(order.get("precland_alt", 3.0))       # align 3 m over the tag, then vision precland
         deliver  = order.get("deliver_ned", [0.0, 12.0])       # NED offset from takeoff to the drop pad
         landing  = order.get("landing_ned", [0.0, 0.0])        # NED offset to the landing station (def: home)
         dworld   = order.get("deliver_world")                  # [E, N, rest_z] gz drop-pad centre (winch slide)
