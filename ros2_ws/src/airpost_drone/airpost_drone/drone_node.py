@@ -15,9 +15,11 @@ PX4 v1.17 exports (dds_topics.yaml):
     /fmu/in/vehicle_command           (arm, set OFFBOARD, land)
 
 It keeps the SAME MQTT contract as the hardware drone: streams telemetry on data/<DRONE_ID>, and on a
-command/downlink/ActuatorReq/<DRONE_ID> order flies a delivery (takeoff -> drop point -> winch the
-parcel down -> land), driving the winch through the Gazebo winch flags. So the real ROS 2 graph
-commands the gz/PX4 drone; on real hardware the same node runs against the real Pixhawk's DDS client.
+command/downlink/ActuatorReq/<DRONE_ID> order flies the AirPost delivery mission — mirroring
+simulation/fleet_service.py: take off to the cruise band, fly to the drop pad and lower the parcel by
+winch at ~10 m (hovering, NOT landing), climb back, return to the landing station, and AUTO.PRECLAND on
+its AprilTag pad. So the real ROS 2 graph commands the gz/PX4 drone; on real hardware the same node
+runs against the real Pixhawk's DDS client.
 """
 import json
 import math
@@ -121,17 +123,13 @@ class DroneNode(Node):
 
     def arm(self):    self._cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, p1=1.0)
     def disarm(self): self._cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, p1=0.0)
-    def set_offboard(self): self._cmd(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, p1=1.0, p2=6.0)  # PX4_CUSTOM_MAIN_MODE_OFFBOARD
-    def land(self):   self._cmd(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+    def set_offboard(self):  self._cmd(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, p1=1.0, p2=6.0)        # OFFBOARD
+    def set_precland(self):  self._cmd(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, p1=1.0, p2=4.0, p3=9.0)  # AUTO.PRECLAND
+    def land(self):          self._cmd(VehicleCommand.VEHICLE_CMD_NAV_LAND)
 
-    def _winch_drop(self):
-        try:
-            open(f"/tmp/airpost_winch_ground_{WINCH_INST}", "w").write("0.25")
-            open(f"/tmp/airpost_winch_go_{WINCH_INST}", "w").write("go")
-        except OSError:
-            pass
-
-    # ---- mission: triggered by an MQTT order, flown in OFFBOARD over local-NED setpoints ----
+    # ---- mission, mirroring simulation/fleet_service.py fly() over the uXRCE-DDS link ----------
+    # takeoff -> cruise to the drop pad -> descend to WINCH height -> lower the parcel by winch (hover,
+    # NOT land) -> climb back -> cruise to the landing station -> AUTO.PRECLAND on its AprilTag pad.
     def _on_order(self, c, u, msg):
         try:
             order = json.loads(msg.payload.decode())
@@ -140,33 +138,105 @@ class DroneNode(Node):
         threading.Thread(target=self._fly, args=(order,), daemon=True).start()
 
     def _fly(self, order):
-        # order carries NED waypoints relative to takeoff: [[n,e,down,cmd]...] + tagidx (drop index)
-        wpl = order.get("values", [])
-        tagidx = int(order.get("tagidx", max(0, len(wpl) - 2)))
-        print(f"[{DRONE_ID}] order: {len(wpl)} waypoints, drop at {tagidx}", flush=True)
-        # 1) start streaming a setpoint (current/takeoff), then arm + OFFBOARD
-        self._sp = [0.0, 0.0, -float(order.get("takeoff_alt", 5.0))]
+        cruise   = float(order.get("cruise", 15.0))
+        winch_h  = float(order.get("winch_height", 10.0))      # metres above the pad while lowering
+        pre_alt  = float(order.get("precland_alt", 6.0))       # height to align over the tag before precland
+        deliver  = order.get("deliver_ned", [0.0, 12.0])       # NED offset from takeoff to the drop pad
+        landing  = order.get("landing_ned", [0.0, 0.0])        # NED offset to the landing station (def: home)
+        dworld   = order.get("deliver_world")                  # [E, N, rest_z] gz drop-pad centre (winch slide)
+        lworld   = order.get("landing_world")                  # [N, E, station_id, marker_z] (precland target)
+        print(f"[{DRONE_ID}] order: deliver@{deliver} winch {winch_h:.0f}m -> land@{landing} (precland)", flush=True)
+
+        # 1) takeoff: stream a climb setpoint, switch to OFFBOARD + arm, wait until at cruise.
+        self.flight_status = 1
+        self._sp = [0.0, 0.0, -cruise]
         for _ in range(20):
             time.sleep(0.1)
         self.set_offboard(); self.arm()
-        # 2) fly each waypoint; winch-drop at tagidx
-        for i, wp in enumerate(wpl):
-            self._sp = [float(wp[0]), float(wp[1]), -abs(float(wp[2]))]
-            self.flight_status = 1 if i >= tagidx else 0
-            self._settle(self._sp)
-            if i == tagidx:
-                print(f"[{DRONE_ID}] ***winch drop***", flush=True); self._winch_drop(); time.sleep(8)
-        # 3) land
-        self.land()
-        print(f"[{DRONE_ID}] landing", flush=True)
+        self._wait_alt(cruise)
 
-    def _settle(self, target, tol=1.0, secs=60):
+        # 2) delivery leg: cruise to the pad, descend to winch height, lower the parcel, climb back.
+        self._deliver(deliver, dworld, cruise, winch_h)
+
+        # 3) return to the landing station and precision-land on its pad.
+        self._land_at(landing, lworld, pre_alt)
+        self.flight_status = 0
+
+    def _deliver(self, deliver_ned, deliver_world, cruise, winch_h):
+        dn, de = float(deliver_ned[0]), float(deliver_ned[1])
+        self._goto(dn, de, cruise)                       # arrive over the drop at the cruise band
+        self._goto(dn, de, winch_h, z_tol=0.8)           # descend to winch height (hover, NOT land)
+        time.sleep(2)
+        go_f, done_f, ground_f = (f"/tmp/airpost_winch_{s}_{WINCH_INST}" for s in ("go", "done", "ground"))
+        try:
+            os.remove(done_f)
+        except OSError:
+            pass
+        try:
+            with open(ground_f, "w") as f:
+                # "rest_z E N" lets parcel_fleet slide the parcel onto the box centre as it lowers.
+                f.write(f"{deliver_world[2]} {deliver_world[0]} {deliver_world[1]}" if deliver_world else "0.29")
+            open(go_f, "w").write("go")
+        except OSError:
+            pass
+        print(f"[{DRONE_ID}] lowering parcel by winch at {winch_h:.0f} m", flush=True)
+        t0 = time.time(); lowered = False
+        while time.time() - t0 < 40.0:
+            if os.path.exists(done_f):
+                lowered = True
+                break
+            time.sleep(0.3)
+        try:
+            os.remove(go_f)
+        except OSError:
+            pass
+        print(f"[{DRONE_ID}] parcel delivered" if lowered else f"[{DRONE_ID}] winch lower timed out", flush=True)
+        self._goto(dn, de, cruise)                       # climb back, clearing the drop column
+
+    def _land_at(self, landing_ned, landing_world, pre_alt):
+        ln, le = float(landing_ned[0]), float(landing_ned[1])
+        if landing_world:                                # tell this drone's detector which tag to seek
+            try:
+                tmp = f"/tmp/airpost_land_target_{WINCH_INST}.tmp"
+                with open(tmp, "w") as f:
+                    f.write(" ".join(str(x) for x in landing_world))  # "N E station_id marker_z"
+                os.replace(tmp, f"/tmp/airpost_land_target_{WINCH_INST}")
+            except OSError:
+                pass
+        open(f"/tmp/airpost_landing_active_{WINCH_INST}", "w").write("1")  # gate the detector to NOW
+        self._goto(ln, le, pre_alt, xy_tol=1.0, z_tol=0.8)  # align over the station tag
+        print(f"[{DRONE_ID}] precision-landing on station pad", flush=True)
+        self.set_precland()                              # PX4 AUTO.PRECLAND centres on the LANDING_TARGET
+        self._sp = None                                  # stop the offboard stream so PRECLAND owns the drone
+        t0 = time.time()
+        while time.time() - t0 < 120:
+            if self.status is not None and self.status.arming_state == 1:   # DISARMED -> touched down
+                print(f"[{DRONE_ID}] landed + disarmed on the pad", flush=True)
+                break
+            if int(time.time() - t0) % 8 == 0:
+                self.set_precland()                      # re-issue in case an ack was dropped
+            time.sleep(0.5)
+        try:
+            os.remove(f"/tmp/airpost_landing_active_{WINCH_INST}")
+        except OSError:
+            pass
+
+    def _goto(self, n, e, alt, xy_tol=2.0, z_tol=1.5, secs=200):
+        """Steer the live OFFBOARD setpoint to (n, e, alt-above-takeoff) and wait until arrival."""
+        self._sp = [float(n), float(e), -abs(float(alt))]
         t0 = time.time()
         while time.time() - t0 < secs:
             lp = self.lp
-            if lp is not None:
-                if math.dist((lp.x, lp.y, lp.z), target) < tol:
-                    return
+            if lp is not None and math.hypot(lp.x - n, lp.y - e) < xy_tol and abs(-lp.z - abs(alt)) < z_tol:
+                return
+            time.sleep(0.2)
+
+    def _wait_alt(self, alt, secs=60):
+        t0 = time.time()
+        while time.time() - t0 < secs:
+            lp = self.lp
+            if lp is not None and -lp.z >= alt - 1.0:
+                return
             time.sleep(0.2)
 
 
