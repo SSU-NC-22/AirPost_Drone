@@ -12,5 +12,6 @@ setup(
     entry_points={'console_scripts': [
         'drone_node = airpost_drone.drone_node:main',
         'dummy_camera = airpost_drone.dummy_camera:main',
+        'obstacle_sensor = airpost_drone.obstacle_sensor:main',
     ]},
 )

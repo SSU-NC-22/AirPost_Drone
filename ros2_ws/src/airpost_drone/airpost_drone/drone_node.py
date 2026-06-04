@@ -32,7 +32,8 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from px4_msgs.msg import (OffboardControlMode, TrajectorySetpoint, VehicleCommand,
-                          VehicleGlobalPosition, VehicleLocalPosition, VehicleStatus, BatteryStatus)
+                          VehicleGlobalPosition, VehicleLocalPosition, VehicleStatus, BatteryStatus,
+                          ObstacleDistance)
 import paho.mqtt.client as mqtt
 
 DRONE_ID = os.environ.get("DRONE_ID", "DRO51")
@@ -44,6 +45,13 @@ WINCH_INST = os.environ.get("DRONE_INSTANCE", "0")
 # default (/fmu/...). MAV_SYS_ID = instance+1 targets VehicleCommands at the right autopilot.
 PX4_NS = os.environ.get("PX4_NS", "").strip("/")
 MAV_SYS_ID = int(WINCH_INST) + 1
+# Onboard local obstacle avoidance: drone_node consumes its obstacle sensor (obstacle_sensor node, or
+# the real depth/lidar driver) and bends its OFFBOARD setpoints around obstacles — PX4's built-in
+# Collision Prevention is Position-mode-only, so in offboard the companion owns avoidance.
+OBSTACLE_TOPIC = os.environ.get("OBSTACLE_TOPIC", "/airpost/obstacle_distance")
+AVOID_DIST = float(os.environ.get("AVOID_DIST", "8.0"))   # start steering away within this many metres
+AVOID_GAIN = float(os.environ.get("AVOID_GAIN", "1.6"))   # repulsion strength
+AVOID_MAX = 18.0                                          # cap the lateral diversion (m)
 
 
 def fmu(topic):
@@ -66,6 +74,8 @@ class DroneNode(Node):
         self.create_subscription(VehicleLocalPosition, fmu("out/vehicle_local_position_v1"), self._lp, PX4_QOS)
         self.create_subscription(BatteryStatus, fmu("out/battery_status_v1"), self._batt, PX4_QOS)
         self.create_subscription(VehicleStatus, fmu("out/vehicle_status_v1"), self._status, PX4_QOS)
+        self.obs = None    # latest ObstacleDistance from the onboard sensor (local-NED ring)
+        self.create_subscription(ObstacleDistance, OBSTACLE_TOPIC, self._obs, 10)
         self.pub_ocm = self.create_publisher(OffboardControlMode, fmu("in/offboard_control_mode"), 10)
         self.pub_sp = self.create_publisher(TrajectorySetpoint, fmu("in/trajectory_setpoint"), 10)
         self.pub_cmd = self.create_publisher(VehicleCommand, fmu("in/vehicle_command"), 10)
@@ -85,6 +95,27 @@ class DroneNode(Node):
     def _lp(self, m): self.lp = m
     def _batt(self, m): self.batt = m
     def _status(self, m): self.status = m
+    def _obs(self, m): self.obs = m
+
+    def _avoid_offset(self):
+        """Repulsion (north, east) pushing the setpoint away from any obstacle within AVOID_DIST.
+        Decodes the local-NED ObstacleDistance ring (index 0 = North, `increment` deg per bin)."""
+        m = self.obs
+        if m is None:
+            return 0.0, 0.0
+        rn = re = 0.0
+        for i, d_cm in enumerate(m.distances):
+            d = d_cm / 100.0
+            if d <= 0.0 or d > AVOID_DIST or d_cm >= m.max_distance:   # no obstacle / out of range
+                continue
+            brg = math.radians(i * m.increment + m.angle_offset)       # obstacle bearing from North
+            mag = AVOID_GAIN * (AVOID_DIST - d)                        # stronger the closer it is
+            rn -= mag * math.cos(brg)                                  # push AWAY from the obstacle
+            re -= mag * math.sin(brg)
+        n = math.hypot(rn, re)
+        if n > AVOID_MAX:
+            rn, re = rn / n * AVOID_MAX, re / n * AVOID_MAX
+        return rn, re
 
     def _publish_telemetry(self):
         gp, batt = self.gp, self.batt
@@ -165,7 +196,7 @@ class DroneNode(Node):
     def _deliver(self, deliver_ned, deliver_world, cruise, winch_h):
         dn, de = float(deliver_ned[0]), float(deliver_ned[1])
         self._goto(dn, de, cruise)                       # arrive over the drop at the cruise band
-        self._goto(dn, de, winch_h, z_tol=0.8)           # descend to winch height (hover, NOT land)
+        self._goto(dn, de, winch_h, z_tol=0.8, avoid=False)  # vertical descent over the pad (no diversion)
         time.sleep(2)
         go_f, done_f, ground_f = (f"/tmp/airpost_winch_{s}_{WINCH_INST}" for s in ("go", "done", "ground"))
         try:
@@ -204,7 +235,7 @@ class DroneNode(Node):
             except OSError:
                 pass
         open(f"/tmp/airpost_landing_active_{WINCH_INST}", "w").write("1")  # gate the detector to NOW
-        self._goto(ln, le, pre_alt, xy_tol=1.0, z_tol=0.8)  # align over the station tag
+        self._goto(ln, le, pre_alt, xy_tol=1.0, z_tol=0.8, avoid=False)  # precise align over the tag
         print(f"[{DRONE_ID}] precision-landing on station pad", flush=True)
         self.set_precland()                              # PX4 AUTO.PRECLAND centres on the LANDING_TARGET
         self._sp = None                                  # stop the offboard stream so PRECLAND owns the drone
@@ -221,11 +252,15 @@ class DroneNode(Node):
         except OSError:
             pass
 
-    def _goto(self, n, e, alt, xy_tol=2.0, z_tol=1.5, secs=200):
-        """Steer the live OFFBOARD setpoint to (n, e, alt-above-takeoff) and wait until arrival."""
-        self._sp = [float(n), float(e), -abs(float(alt))]
-        t0 = time.time()
+    def _goto(self, n, e, alt, xy_tol=2.0, z_tol=1.5, secs=200, avoid=True):
+        """Steer the live OFFBOARD setpoint to (n, e, alt-above-takeoff) and wait until arrival,
+        bending the commanded position away from obstacles (onboard local avoidance) en route."""
+        t0 = time.time(); warned = False
         while time.time() - t0 < secs:
+            rn, re = self._avoid_offset() if avoid else (0.0, 0.0)
+            if (rn or re) and not warned:
+                print(f"[{DRONE_ID}] obstacle ahead — steering around", flush=True); warned = True
+            self._sp = [float(n) + rn, float(e) + re, -abs(float(alt))]
             lp = self.lp
             if lp is not None and math.hypot(lp.x - n, lp.y - e) < xy_tol and abs(-lp.z - abs(alt)) < z_tol:
                 return
