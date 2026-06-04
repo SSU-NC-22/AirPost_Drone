@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>airpost_drone</name>
+  <version>1.0.0</version>
+  <description>AirPost drone controller (ROS 2 / PX4 v1.17 uXRCE-DDS port of the ROS1 drone_controller).</description>
+  <maintainer email="dev@airpost.local">SSU NC-Lab</maintainer>
+  <license>MIT</license>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>px4_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
