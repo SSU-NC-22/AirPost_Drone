@@ -36,6 +36,18 @@ import paho.mqtt.client as mqtt
 DRONE_ID = os.environ.get("DRONE_ID", "DRO51")
 MQTT_HOST = os.environ.get("MQTT_BROKER_HOST", "127.0.0.1")
 WINCH_INST = os.environ.get("DRONE_INSTANCE", "0")
+# Multi-drone: every PX4 instance shares one agent on :8888, so each is booted with a distinct
+# uXRCE-DDS namespace (PX4_UXRCE_DDS_NS=px4_<key>, key=instance+1) and its topics live under
+# /px4_<key>/fmu/... . PX4_NS selects which drone this node drives; empty = the single-drone
+# default (/fmu/...). MAV_SYS_ID = instance+1 targets VehicleCommands at the right autopilot.
+PX4_NS = os.environ.get("PX4_NS", "").strip("/")
+MAV_SYS_ID = int(WINCH_INST) + 1
+
+
+def fmu(topic):
+    """Build a /fmu topic, namespaced per drone when PX4_NS is set (e.g. /px4_1/fmu/out/...)."""
+    return f"/{PX4_NS}/fmu/{topic}" if PX4_NS else f"/fmu/{topic}"
+
 
 # PX4 publishes /fmu/out/* with BEST_EFFORT + KEEP_LAST + TRANSIENT_LOCAL; subscribers must match.
 PX4_QOS = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -46,13 +58,15 @@ class DroneNode(Node):
     def __init__(self):
         super().__init__("airpost_drone")
         self.gp = None; self.lp = None; self.batt = None; self.status = None
-        self.create_subscription(VehicleGlobalPosition, "/fmu/out/vehicle_global_position", self._gp, PX4_QOS)
-        self.create_subscription(VehicleLocalPosition, "/fmu/out/vehicle_local_position", self._lp, PX4_QOS)
-        self.create_subscription(BatteryStatus, "/fmu/out/battery_status", self._batt, PX4_QOS)
-        self.create_subscription(VehicleStatus, "/fmu/out/vehicle_status", self._status, PX4_QOS)
-        self.pub_ocm = self.create_publisher(OffboardControlMode, "/fmu/in/offboard_control_mode", 10)
-        self.pub_sp = self.create_publisher(TrajectorySetpoint, "/fmu/in/trajectory_setpoint", 10)
-        self.pub_cmd = self.create_publisher(VehicleCommand, "/fmu/in/vehicle_command", 10)
+        # PX4 v1.17 exports message-versioned topics with a _vN suffix (vehicle_global_position is
+        # currently unversioned). Names confirmed from `ros2 topic list -t` against the live bridge.
+        self.create_subscription(VehicleGlobalPosition, fmu("out/vehicle_global_position"), self._gp, PX4_QOS)
+        self.create_subscription(VehicleLocalPosition, fmu("out/vehicle_local_position_v1"), self._lp, PX4_QOS)
+        self.create_subscription(BatteryStatus, fmu("out/battery_status_v1"), self._batt, PX4_QOS)
+        self.create_subscription(VehicleStatus, fmu("out/vehicle_status_v1"), self._status, PX4_QOS)
+        self.pub_ocm = self.create_publisher(OffboardControlMode, fmu("in/offboard_control_mode"), 10)
+        self.pub_sp = self.create_publisher(TrajectorySetpoint, fmu("in/trajectory_setpoint"), 10)
+        self.pub_cmd = self.create_publisher(VehicleCommand, fmu("in/vehicle_command"), 10)
         self.flight_status = None              # mirrors the ROS1 controller's mission status
         self._sp = None                        # active offboard position setpoint [n,e,d]
         # MQTT: same contract as the hardware drone
@@ -101,7 +115,7 @@ class DroneNode(Node):
         c.command = command
         for i in range(1, 8):
             setattr(c, f"param{i}", float(params.get(f"p{i}", 0.0)))
-        c.target_system = 1; c.target_component = 1; c.source_system = 1; c.source_component = 1
+        c.target_system = MAV_SYS_ID; c.target_component = 1; c.source_system = MAV_SYS_ID; c.source_component = 1
         c.from_external = True
         self.pub_cmd.publish(c)
 
