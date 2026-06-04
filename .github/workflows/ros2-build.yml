@@ -1,0 +1,51 @@
+name: ros2-build
+
+# Builds the integrated drone ROS 2 package (airpost_drone) against PX4 v1.17 messages in a clean
+# ros:humble container — the deployment-equivalent environment for the Jetson companion computer.
+# Proves the code that flies the drone compiles and exposes its executables before it is shipped.
+
+on:
+  push:
+    branches: [main, humble]
+    paths: ['ros2_ws/**', '.github/workflows/ros2-build.yml']
+  pull_request:
+    paths: ['ros2_ws/**', '.github/workflows/ros2-build.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ros:humble-ros-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            python3-colcon-common-extensions git python3-pip
+          pip3 install --no-cache-dir paho-mqtt
+
+      - name: Assemble colcon workspace (airpost_drone + px4_msgs release/1.17)
+        run: |
+          mkdir -p ws/src
+          cp -r ros2_ws/src/airpost_drone ws/src/airpost_drone
+          git clone --branch release/1.17 --depth 1 \
+            https://github.com/PX4/px4_msgs.git ws/src/px4_msgs
+
+      - name: colcon build
+        run: |
+          . /opt/ros/humble/setup.sh
+          cd ws
+          colcon build --packages-select px4_msgs airpost_drone --event-handlers console_direct+
+
+      - name: Smoke test (executables + node imports)
+        run: |
+          . /opt/ros/humble/setup.sh
+          cd ws && . install/setup.sh
+          # both entry points must be installed and discoverable
+          ros2 pkg executables airpost_drone | tee /tmp/exes
+          grep -q 'drone_node'   /tmp/exes
+          grep -q 'dummy_camera' /tmp/exes
+          # nodes import cleanly against px4_msgs + rclpy + paho
+          python3 -c "import airpost_drone.drone_node, airpost_drone.dummy_camera; print('imports OK')"

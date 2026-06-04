@@ -1,51 +1,116 @@
-# AirPost_Drone — the flying courier (hardware + on-drone software)
+# AirPost_Drone — the flying courier (on-drone ROS 2 software + hardware)
 
 This repository is the **drone itself** in the [AirPost](https://github.com/jsoone24/NC_AirPost)
 autonomous parcel-delivery system: the physical aircraft, plus the software that runs **on board** to
 fly missions, deliver the parcel, and camera-land precisely on a station.
 
+The same code is exercised **end-to-end in simulation** (PX4 v1.17 SITL + Gazebo) before it ever
+touches hardware — and it transfers to the real Pixhawk+Jetson with no logic changes, because in both
+cases it speaks to PX4 over the **native uXRCE-DDS bridge** (ROS 2), not a desktop-only shim.
+
 ## What it is, in plain terms
 
 A delivery drone is really two computers bolted together:
 
-1. **A flight controller (Pixhawk 4)** — the real-time autopilot that keeps the aircraft stable and
-   executes low-level flight (arm, take off, go to a point, land). It speaks **MAVLink**.
-2. **A companion computer (NVIDIA Jetson Nano)** — a small Linux box that does the "thinking" the
-   autopilot can't: runs the camera + AprilTag vision for **precision landing**, talks to the rest of
-   AirPost over LTE/MQTT, and sends high-level commands down to the Pixhawk over MAVROS.
+1. **A flight controller (Pixhawk)** — the real-time autopilot that keeps the aircraft stable and
+   executes low-level flight (arm, take off, go to a point, land). It runs **PX4 v1.17**.
+2. **A companion computer (NVIDIA Jetson)** — a small Linux box that does the "thinking" the autopilot
+   can't: runs the **ROS 2** delivery logic + camera/AprilTag vision for precision landing, talks to
+   the rest of AirPost over LTE/MQTT, and commands the Pixhawk.
 
-The Jetson also carries a **RealSense T265 tracking camera** (visual odometry, so the drone can hold
-position even where GPS is weak) and a **winch motor** to lower the parcel without landing.
+The companion talks to PX4 over **uXRCE-DDS**: PX4's `uxrce_dds_client` exposes the flight stack as
+ROS 2 topics (`/fmu/out/*` telemetry, `/fmu/in/*` commands) through a Micro-XRCE-DDS Agent. Our ROS 2
+node subscribes to the drone's **own** state and flies it in OFFBOARD mode — no MAVROS, no MAVLink
+translation layer.
+
+A downward camera (Intel RealSense) feeds the AprilTag vision for precision landing, and a winch motor
+lowers the parcel without landing.
 
 ## Where it sits in AirPost
 
 ```
-AirPost backend ──MQTT(flight order)──► AirPost_Drone (Jetson)
-                                          │  MAVROS / MAVLink
+AirPost backend ──MQTT(flight order)──► AirPost_Drone companion (ROS 2)
+                                          │  uXRCE-DDS  (/fmu/in/* commands)
                                           ▼
-                                        Pixhawk 4 autopilot ──► motors, GPS, sensors
-                                          ▲
-                  AprilTag vision ────────┘  (camera → "land on the marker")
-AirPost_Drone ──MQTT(GPS, status, telemetry)──► Sink → Kafka → backend (live tracking + storage)
+                                        PX4 v1.17 autopilot ──► motors, GPS, sensors
+                                          │  uXRCE-DDS  (/fmu/out/* telemetry)
+                                          ▼
+                  camera ──► AprilTag ──► precision-land on the station marker
+AirPost_Drone ──MQTT(GPS, status, battery)──► Sink → Kafka → backend (live tracking + storage)
 ```
 
-- **Receives** a flight order over MQTT from the backend (which station to start at, where to drop,
-  where to land).
-- **Flies it** by commanding the Pixhawk (take off → cruise → winch the parcel down → fly to the
-  landing station → AprilTag precision-land).
-- **Reports** its GPS, status and sensor readings back so the operator sees it live on the map and the
-  data is archived.
-
-> **Want to see this flight without building hardware?** The
-> [`simulation/`](https://github.com/jsoone24/NC_AirPost/tree/main/simulation) in the umbrella repo
-> runs the *exact same mission* (takeoff → winch → AprilTag precision-land) in Gazebo physics, driven
-> by the same backend + MQTT. Build the hardware below when you want it to leave the screen.
-
-The rest of this README is the **hardware bill of materials and the step-by-step bring-up** for the
-real aircraft (Jetson image, ROS, MAVROS, RealSense, AprilTag, the auto-reverse-SSH tunnel, etc.).
+- **Receives** a flight order over MQTT from the backend (drop point, landing station).
+- **Flies it** by commanding PX4 over DDS (arm → take off → cruise → winch the parcel down → land).
+- **Reports** GPS / status / battery — read from PX4's *own* telemetry over DDS — back over MQTT so the
+  operator sees it live and the data is archived.
 
 ---
 
+## Branches — pick the autopilot/ROS pairing you run
+
+| Branch    | ROS            | Autopilot link                | Use it for |
+|-----------|----------------|-------------------------------|------------|
+| **`main`**   | **ROS 2 Humble** | **PX4 v1.17 · uXRCE-DDS** | Current. The migrated, working on-drone stack (this README). |
+| `humble`  | ROS 2 Humble   | PX4 v1.17 · uXRCE-DDS         | Same ROS 2 migration, named for the ROS distro. |
+| `noetic`  | ROS 1 Noetic   | MAVROS / MAVLink              | The legacy ROS 1 controller (`catkin_ws/drone_controller`), preserved for reference. |
+
+The jump from `noetic` to `main` is the migration from **ROS 1 + MAVROS** to **ROS 2 + native DDS**,
+matching PX4 v1.17's message-versioned uXRCE-DDS interface.
+
+## The ROS 2 package: `ros2_ws/src/airpost_drone`
+
+Two real ROS 2 nodes — the entire on-drone graph:
+
+- **`drone_node`** (`airpost_drone/drone_node.py`) — the controller.
+  - *Subscribes* (the drone's **own** autopilot state over DDS): `/fmu/out/vehicle_global_position`,
+    `vehicle_local_position_v1`, `battery_status_v1`, `vehicle_status_v1`.
+  - *Publishes* (commands): `/fmu/in/offboard_control_mode`, `trajectory_setpoint`, `vehicle_command`
+    (arm, set OFFBOARD, land).
+  - On an MQTT order (`command/downlink/ActuatorReq/<id>`) it flies a delivery in OFFBOARD —
+    takeoff → waypoints → winch-drop → land — and streams telemetry on `data/<id>` (→ Sink → Kafka).
+  - **Multi-drone:** set `PX4_NS=px4_<key>` and it drives `/px4_<key>/fmu/...`, targeting
+    `VehicleCommand`s at `MAV_SYS_ID = instance+1`, so many drones share one agent without collision.
+- **`dummy_camera`** (`airpost_drone/dummy_camera.py`) — a **real ROS 2 node** that stands in for
+  realsense-ros in simulation, publishing `sensor_msgs/Image` on the RealSense topic so the perception
+  graph runs without a physical camera.
+
+### Swapping the dummy camera for a real RealSense — config only
+
+`dummy_camera` publishes on **`$CAMERA_TOPIC`** (default `/camera/color/image_raw`, the realsense-ros
+topic). To use a real camera, **don't launch `dummy_camera`** — run realsense-ros on the same topic:
+
+```bash
+ros2 launch realsense2_camera rs_launch.py     # publishes /camera/color/image_raw
+```
+
+Nothing downstream changes: every subscriber keys off `CAMERA_TOPIC`. The dummy node exists only so the
+integrated graph is testable without hardware.
+
+---
+
+## Try it in simulation (no hardware)
+
+The umbrella repo's [`simulation/`](https://github.com/jsoone24/NC_AirPost/tree/main/simulation) runs
+this exact ROS 2 stack against PX4 v1.17 SITL + Gazebo:
+
+```bash
+cd NC_AirPost/simulation
+./run_ros2_fleet.sh 1          # 1 drone: Agent + PX4/gz + drone_node + dummy_camera + GCS heartbeat
+# then send a delivery order (the backend dispatcher does this in production):
+#   mosquitto_pub -t command/downlink/ActuatorReq/DRO51 -m \
+#     '{"takeoff_alt":6.0,"tagidx":1,"values":[[0,0,6,16],[0,12,6,16]]}'
+```
+
+`run_ros2_fleet.sh N` launches N drones (each on DDS namespace `px4_<key>`). Telemetry appears on
+`data/DRO51..` exactly as from the real aircraft. See the simulation README for the dependency setup
+(ros-humble env, the Micro-XRCE-DDS Agent, px4_msgs).
+
+> **Why a GCS heartbeat?** PX4 treats the DDS link as the onboard control link, not a ground station.
+> With no MAVLink GCS it boots into a datalink-loss state and won't arm. `gcs_link.py` provides the
+> heartbeat a real telemetry radio/ground station would; the airframe also disables the RC/datalink
+> failsafes for autonomous offboard flight (`NAV_DLL_ACT=0`, `COM_RCL_EXCEPT=4`).
+
+---
 
 ## H/W Drone Parts
 
@@ -55,105 +120,62 @@ real aircraft (Jetson image, ROS, MAVROS, RealSense, AprilTag, the auto-reverse-
 4. Step down circuit XL4015
 5. Li-po battery 5800mah
 6. [HOLYBRO] Pixhawk 4 Power Module (PM07)
-7. [Intel] RealSense TrackingCamera T265
+7. [Intel] RealSense Tracking/Depth Camera
 8. [HOLYBRO] Pixhawk4 500mW Telemetry 433Mhz
 9. [TMOTOR] AIR2213 KV920 BLDC Motor, T9545 Prop
 10. [TMOTOR] AIR20A ESC
-11. [Motorbank] GM24-KTX Dc motor
+11. [Motorbank] GM24-KTX Dc motor (winch)
 12. [HOLYBRO] Pixhawk 4
 13. [HOLYBRO] Pixhawk 4 GPS Module
 14. [RadioLink] T8FB BT Transmitter, Receiver set
 15. dji f450 drone frame
 
-## S/W on Jetson nano
+## On-hardware bring-up (ROS 2 / PX4 v1.17)
 
-1. Jetpack 4.2
-2. opencv 3.2
-3. librealsense v2.25.0
-4. ROS melodic
-   1. mavros
-   2. apriltag-ros
-   3. Realsense_ros v2.2.8
-   4. vision_to_mavros
-   5. rosbags
-5. apriltag
+The companion runs the **same `airpost_drone` package** as in simulation; only the DDS endpoints point
+at the real Pixhawk instead of SITL.
 
-## Installation Guide
+1. **Pixhawk:** flash PX4 v1.17, enable the DDS client (`UXRCE_DDS_CFG` → the companion serial/UDP
+   link), and load the autonomous-offboard params (`COM_RC_IN_MODE=4`, `COM_RCL_EXCEPT=4`,
+   `NAV_RCL_ACT=0`, `NAV_DLL_ACT=0`).
+2. **Jetson:** Ubuntu + ROS 2 Humble + `px4_msgs` (release/1.17). Build:
+   ```bash
+   colcon build --packages-select px4_msgs airpost_drone
+   ```
+3. **Micro-XRCE-DDS Agent** on the companion, bridging the Pixhawk link to DDS:
+   ```bash
+   MicroXRCEAgent serial --dev /dev/ttyTHS1 -b 921600     # or  udp4 -p 8888
+   ```
+4. **Camera:** `ros2 launch realsense2_camera rs_launch.py` (replaces `dummy_camera`).
+5. **Run the stack:**
+   ```bash
+   ros2 run airpost_drone drone_node       # + your perception/precision-landing nodes
+   ```
+6. **Boot autostart / connectivity:** the LTE module + reverse-SSH tunnel (`scripts/`) bring the drone
+   online; the backend then sends flight orders over MQTT.
 
-1. Jetpack 4.2
-   1. format sd card in windows computer with default settings
-   2. format sdcard with sd card formatter in the link below
-   3. download jetpack image and flash
-   4. https://developer.nvidia.com/embedded/jetpack
-2. useful packages
-   1. ```sudo apt update```
-   2. ```sudo apt upgrade```
-   3. ```sudo apt install build-essential cmake git vim tmux terminator```
-   4. [install jtop](https://github.com/rbonghi/jetson_stats)
-   5. [vim setting](https://hyoje420.tistory.com/51)
-3. [opencv 3.2](https://github.com/jetsonhacks/buildOpenCVXavier)
-4. [JetsonHacksNano librealsense  v2.25.0](https://github.com/JetsonHacksNano/installLibrealsense/tree/vL4T32.2.1)
-   1. [librealsense v2.25.0 source](https://github.com/IntelRealSense/librealsense/releases/tag/v2.25.0)
-5. [apriltag](https://github.com/AprilRobotics/apriltag)
-6. [ROS melodic](http://wiki.ros.org/melodic/Installation/Ubuntu)
-   1. with catkin_build in catkin_ws_build directory
-      1. [mavros](https://ardupilot.org/dev/docs/ros-install.html#ros-install)
-      2. [apriltag-ros](https://github.com/AprilRobotics/apriltag_ros)
-      3. [rosbags](https://github.com/ros/ros_comm/tree/melodic-devel)
-   2. with catkin_make in catkin_ws directory
-      1. [vision_to_mavros](https://github.com/thien94/vision_to_mavros)
-      2. [JetsonHacksNano realsense_ros_v2.2.8](https://github.com/JetsonHacksNano/installRealSenseROS/releases/tag/vL4T32.2.1)
-         1. [realsense_ros_v2.2.8 source](https://github.com/IntelRealSense/realsense-ros/tree/2.2.8)
-7. Python packages
-   1. ```pip install cython```
-   2. ```pip install pymavros```
-   3. ```pip install pyrealsense```
-8. Set Auto reverse ssh tunnel on boot
-   1. copy scripts/reverse_ssh_continuous.sh to /scripts/ folder
-      - ```mkdir /scripts && sudo cp scripts/reverse_ssh_continuous.sh /scripts```
-   2. run crontab edit with ```crontab -e``` and add following commands below
-      ```
-      * * * * *  /scripts/reverse_ssh_continuous.sh
-      * * * * * sleep 20; /scripts/reverse_ssh_continuous.sh
-      * * * * * sleep 40; /scripts/reverse_ssh_continuous.sh
-      ```
-## Running the code
-1. git clone this repository
-2. move catkin_ws, catkin_ws_build folder to your home directory. 
-3. build ROS packages
-   1. ```catkin_make``` with catkin_ws folder
-   2. ```catkin build``` with catkin_ws_build folder
-4. run the whole code with command
-   - ```roslaunch drone_controller all_drone_control.launch```
+## CI
 
-## Trouble shootGuide
-1. Jetson nano is not reading values properly from pixhawk through ROS.
-   - Try ```rosservice call /mavros/set stream rate 0 10 1```
-2. Cannot launch file at catkin_ws_build after compiling catkin_make at catkin_ws folder
-   - [this reference](https://answers.ros.org/question/214923/roslaunch-cant-find-launch-files-with-catkin-build/) would be helpful
-3. Realsense Camera tf error
-   - It's problem with camera. you should power off and power on the camera
-   - [reference link](https://discuss.ardupilot.org/t/precision-landing-with-ros-realsense-t265-camera-and-apriltag-3-part-2-2/51493/5)
+`.github/workflows/ros2-build.yml` builds `airpost_drone` + `px4_msgs` in a clean `ros:humble`
+container and smoke-tests that both executables install and the nodes import — the deployment image,
+proven on every push.
+
+## Troubleshooting
+
+- **`ros2 topic list` shows no `/fmu/*`:** the DDS session isn't up. Confirm the Agent is running and
+  PX4's `uxrce_dds_client` is connected (`uxrce_dds_client status` in the PX4 shell). On macOS, pin DDS
+  discovery to loopback with the provided `fastdds_localhost.xml` (multicast doesn't loop reliably).
+- **Drone won't arm (offboard):** PX4 needs a GCS heartbeat and the RC/datalink failsafes off — see the
+  GCS-heartbeat note above. The airframe sets these by default for the airpost delivery model.
+- **`ros2 run` can't find the executable:** rebuild — `setup.cfg` installs the console scripts under
+  `lib/airpost_drone/` where `ros2 run/launch` looks.
 
 ## Reference
 
-1. [lte module wiki](https://www.waveshare.com/wiki/SIM7600G-H_4G_for_Jetson_Nano)
-2. [Precision Landing with ROS](https://discuss.ardupilot.org/t/precision-landing-with-ros-realsense-t265-camera-and-apriltag-3-part-2-2/51493)
-3. [ROS and VIO tracking camera for non-GPS Navigation](https://ardupilot.org/dev/docs/ros-vio-tracking-camera.html)
-4. [Drone Assembly Guide video 1. Falcon shop](https://www.youtube.com/watch?v=IdpUYPuSYhE&ab_channel=KoreaFalcon)
-5. [pixhawk 4 official guide](https://docs.px4.io/master/ko/getting_started/px4_basic_concepts.html)
-6. [pm07 setting](http://www.holybro.com/product/pixhawk-4-power-module-pm07/) 
-7. [Holybro X500 + Pixhawk4 assembly](https://docs.px4.io/master/ko/frames_multicopter/holybro_x500_pixhawk4.html)
-8. [pixhawk 4 airframe](https://docs.px4.io/master/ko/airframes/airframe_reference.html)
-9. [pixhawk 4 wiring](https://docs.px4.io/master/ko/assembly/quick_start_pixhawk4.html#power)
-10. [xcopter esc](https://www.youtube.com/watch?v=nJnbSJwq4Uw&t=199s&ab_channel=Dronejang)
-11. [reverse ssh configuration](https://system-monitoring.readthedocs.io/en/latest/ssh.html)
-12. Rospy subscribe multiple topics [first_link](https://robotics.stackexchange.com/questions/6652/how-to-get-a-python-node-in-ros-subscribe-to-multiple-topics) [second_link](https://answers.ros.org/question/225008/python-class-for-subscribing-data-for-several-topics/)
-13. [set waypoint to pixhawk](https://github.com/mavlink/mavros/issues/837)
-14. [mavros wiki](http://wiki.ros.org/mavros#gcs_bridge)
-15. [rospy tutorial](https://github.com/greattoe/ros_tutorial_kr/blob/master/ros1_tutorial/rospy/rospy_1_How2UsePythonWithCatkin_1.md)
-16. [rospkg module not found](https://answers.ros.org/question/245967/importerror-no-module-named-rospkg-python3-solved/)
-17. [Ardupilot Mission commands overview](https://ardupilot.org/copter/docs/common-mavlink-mission-command-messages-mav_cmd.html#mav-cmd-nav-takeoff)
-18. [Ardupilot Set Flight mode](https://ardupilot.org/dev/docs/apmcopter-adding-a-new-flight-mode.html)
-19. [pixhawk gps led warning](https://ardupilot.org/copter/docs/common-leds-pixhawk.html)
-20. [SITL Guide](https://ardupilot.org/dev/docs/using-sitl-for-ardupilot-testing.html)
+1. [PX4 uXRCE-DDS (ROS 2) interface](https://docs.px4.io/main/en/middleware/uxrce_dds.html)
+2. [px4_msgs](https://github.com/PX4/px4_msgs) · [px4_ros_com offboard example](https://github.com/PX4/px4_ros_com)
+3. [Micro-XRCE-DDS Agent](https://github.com/eProsima/Micro-XRCE-DDS-Agent)
+4. [Precision landing with vision + AprilTag](https://docs.px4.io/main/en/advanced_features/precland.html)
+5. [Holybro X500 + Pixhawk assembly](https://docs.px4.io/main/en/frames_multicopter/holybro_x500_pixhawk4.html)
+6. [RealSense ROS 2 (realsense-ros)](https://github.com/IntelRealSense/realsense-ros)
+7. [lte module wiki](https://www.waveshare.com/wiki/SIM7600G-H_4G_for_Jetson_Nano) · [reverse ssh](https://system-monitoring.readthedocs.io/en/latest/ssh.html)
