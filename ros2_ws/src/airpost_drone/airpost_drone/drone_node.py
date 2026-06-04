@@ -81,11 +81,14 @@ class DroneNode(Node):
         self.pub_cmd = self.create_publisher(VehicleCommand, fmu("in/vehicle_command"), 10)
         self.flight_status = None              # mirrors the ROS1 controller's mission status
         self._sp = None                        # active offboard position setpoint [n,e,d]
+        self._held = False                     # backend control-tower HOLD (fleet deconfliction)
         # MQTT: same contract as the hardware drone
         self.mq = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, DRONE_ID)
         self.mq.on_connect = lambda c, u, f, rc: (c.subscribe(f"command/downlink/ActuatorReq/{DRONE_ID}"),
+                                                   c.subscribe(f"command/downlink/Hold/{DRONE_ID}"),
                                                    print(f"[{DRONE_ID}] MQTT connected", flush=True))
         self.mq.message_callback_add(f"command/downlink/ActuatorReq/{DRONE_ID}", self._on_order)
+        self.mq.message_callback_add(f"command/downlink/Hold/{DRONE_ID}", self._on_hold)
         self.mq.connect(MQTT_HOST, 1883); self.mq.loop_start()
         self.create_timer(0.1, self._offboard_heartbeat)   # 10 Hz offboard stream (required by PX4)
         self.create_timer(1.0, self._publish_telemetry)    # 1 Hz telemetry -> data/<id>
@@ -167,6 +170,17 @@ class DroneNode(Node):
         except Exception:
             return
         threading.Thread(target=self._fly, args=(order,), daemon=True).start()
+
+    def _on_hold(self, c, u, msg):
+        # Backend control-tower deconfliction: hold in place / resume. Fleet-level separation is the
+        # backend's job; local obstacle dodging is still the drone's own (_avoid_offset).
+        try:
+            held = bool(json.loads(msg.payload.decode()).get("hold"))
+        except Exception:
+            return
+        if held != self._held:
+            print(f"[{DRONE_ID}] backend {'HOLD' if held else 'CLEAR'}", flush=True)
+        self._held = held
 
     def _fly(self, order):
         cruise   = float(order.get("cruise", 15.0))
@@ -257,11 +271,19 @@ class DroneNode(Node):
         bending the commanded position away from obstacles (onboard local avoidance) en route."""
         t0 = time.time(); warned = False
         while time.time() - t0 < secs:
+            lp = self.lp
+            # Backend HOLD: hover at the current spot (or the target alt) until cleared — don't make
+            # progress toward the target, and don't time out while legitimately holding.
+            if self._held:
+                if lp is not None:
+                    self._sp = [lp.x, lp.y, -abs(float(alt))]
+                t0 = time.time()
+                time.sleep(0.2)
+                continue
             rn, re = self._avoid_offset() if avoid else (0.0, 0.0)
             if (rn or re) and not warned:
                 print(f"[{DRONE_ID}] obstacle ahead — steering around", flush=True); warned = True
             self._sp = [float(n) + rn, float(e) + re, -abs(float(alt))]
-            lp = self.lp
             if lp is not None and math.hypot(lp.x - n, lp.y - e) < xy_tol and abs(-lp.z - abs(alt)) < z_tol:
                 return
             time.sleep(0.2)
