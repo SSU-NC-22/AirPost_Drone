@@ -1,8 +1,0 @@
-<launch>
-    <!-- This node will launch the vision_to_mavros t265_precland.launch -->
-    <include file="$(find vision_to_mavros)/launch/t265_precland.launch"/>
-
-    <!-- This node will run the drone_controller MQTT.py  -->
-    <node pkg="drone_controller" name="mqtt" type="MQTT.py" output="screen">
-    </node>
-</launch>
