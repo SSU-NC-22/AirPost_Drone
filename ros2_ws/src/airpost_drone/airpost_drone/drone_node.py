@@ -181,7 +181,7 @@ class DroneNode(Node):
             pass
         print(f"[{DRONE_ID}] lowering parcel by winch at {winch_h:.0f} m", flush=True)
         t0 = time.time(); lowered = False
-        while time.time() - t0 < 40.0:
+        while time.time() - t0 < 60.0:        # match fleet_service WINCH_TIMEOUT; hover until delivered
             if os.path.exists(done_f):
                 lowered = True
                 break
